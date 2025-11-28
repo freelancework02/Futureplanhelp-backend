@@ -1,10 +1,10 @@
 // controllers/eventsController.js
-const pool = require('../Db/index');
+const pool = require("../Db/index");
 
 // Helpers
-const parseBool = v => (v === 'true' || v === '1' || v === 1 || v === 'on');
-const ensureNumber = v => (v === undefined || v === null ? null : Number(v));
-const bytesToMB = b => Math.round((b / (1024 * 1024)) * 10) / 10;
+const parseBool = (v) => v === "true" || v === "1" || v === 1 || v === "on";
+const ensureNumber = (v) => (v === undefined || v === null ? null : Number(v));
+const bytesToMB = (b) => Math.round((b / (1024 * 1024)) * 10) / 10;
 
 //
 // CREATE EVENT (with multiple images)
@@ -24,8 +24,8 @@ exports.createEvent = async (req, res) => {
       link = null,
       address = null,
       description = null,
-      status = '1',
-      coverIndex = '0'
+      status = "1",
+      coverIndex = "0",
     } = req.body;
 
     // Normalize files: multer with upload.fields returns object { images: [...], 'images[]': [...] }
@@ -37,19 +37,29 @@ exports.createEvent = async (req, res) => {
       files = req.files;
     } else {
       // typical fields object
-      files = req.files['images'] || req.files['images[]'] || [];
+      files = req.files["images"] || req.files["images[]"] || [];
     }
 
     if (!title || !files.length) {
       await conn.rollback();
-      return res.status(400).json({ error: 'Title and at least one image required.' });
+      return res
+        .status(400)
+        .json({ error: "Title and at least one image required." });
     }
 
     const [r] = await conn.query(
       `INSERT INTO events
         (title, event_date, hosted_by, link, address, description, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [title.trim(), event_date || null, hosted_by || null, link || null, address || null, description || null, parseBool(status) ? 1 : 0]
+      [
+        title.trim(),
+        event_date || null,
+        hosted_by || null,
+        link || null,
+        address || null,
+        description || null,
+        parseBool(status) ? 1 : 0,
+      ]
     );
 
     const eventId = r.insertId;
@@ -67,17 +77,29 @@ exports.createEvent = async (req, res) => {
     }
 
     // set cover image if coverIndex within range
-    const ci = Math.max(0, Math.min(insertedImageIds.length - 1, Number(coverIndex || 0)));
+    const ci = Math.max(
+      0,
+      Math.min(insertedImageIds.length - 1, Number(coverIndex || 0))
+    );
     if (insertedImageIds[ci]) {
-      await conn.query(`UPDATE events SET cover_image_id = ? WHERE id = ?`, [insertedImageIds[ci], eventId]);
+      await conn.query(`UPDATE events SET cover_image_id = ? WHERE id = ?`, [
+        insertedImageIds[ci],
+        eventId,
+      ]);
     }
 
     await conn.commit();
-    return res.status(201).json({ ok: true, eventId, insertedImages: insertedImageIds.length });
+    return res
+      .status(201)
+      .json({ ok: true, eventId, insertedImages: insertedImageIds.length });
   } catch (err) {
-    try { await conn.rollback(); } catch (e) {}
-    console.error('createEvent error:', err);
-    return res.status(500).json({ error: 'Server error', details: err.message });
+    try {
+      await conn.rollback();
+    } catch (e) {}
+    console.error("createEvent error:", err);
+    return res
+      .status(500)
+      .json({ error: "Server error", details: err.message });
   } finally {
     conn.release();
   }
@@ -91,13 +113,18 @@ exports.createEvent = async (req, res) => {
 exports.createImage = async (req, res) => {
   const conn = await pool.getConnection();
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
 
-    const eventId = ensureNumber(req.body.event_id || req.body.eventId || req.body.event);
-    if (!eventId) return res.status(400).json({ error: 'event_id is required.' });
+    const eventId = ensureNumber(
+      req.body.event_id || req.body.eventId || req.body.event
+    );
+    if (!eventId)
+      return res.status(400).json({ error: "event_id is required." });
 
-    const [[exists]] = await conn.query(`SELECT id FROM events WHERE id = ?`, [eventId]);
-    if (!exists) return res.status(404).json({ error: 'Event not found.' });
+    const [[exists]] = await conn.query(`SELECT id FROM events WHERE id = ?`, [
+      eventId,
+    ]);
+    if (!exists) return res.status(404).json({ error: "Event not found." });
 
     const sort_order = ensureNumber(req.body.sort_order) || 0;
     const [r] = await conn.query(
@@ -108,7 +135,7 @@ exports.createImage = async (req, res) => {
 
     return res.status(201).json({ ok: true, id: r.insertId });
   } catch (err) {
-    console.error('createImage error:', err);
+    console.error("createImage error:", err);
     return res.status(500).json({ error: err.message });
   } finally {
     conn.release();
@@ -132,6 +159,8 @@ exports.listEvents = async (req, res) => {
          e.status, e.cover_image_id, e.created_at, e.updated_at,
          (SELECT COUNT(*) FROM event_images WHERE event_id = e.id) AS images_count
        FROM events e
+              WHERE e.status = 1    -- ACTIVE ONLY
+
        ORDER BY e.created_at DESC
        LIMIT ? OFFSET ?`,
       [per, offset]
@@ -139,7 +168,7 @@ exports.listEvents = async (req, res) => {
 
     return res.json({ page, per, data: rows });
   } catch (err) {
-    console.error('listEvents error:', err);
+    console.error("listEvents error:", err);
     return res.status(500).json({ error: err.message });
   } finally {
     conn.release();
@@ -152,12 +181,14 @@ exports.listEvents = async (req, res) => {
 //
 exports.getEvent = async (req, res) => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  if (!id) return res.status(400).json({ error: "Invalid id" });
 
   const conn = await pool.getConnection();
   try {
-    const [[event]] = await conn.query(`SELECT * FROM events WHERE id = ?`, [id]);
-    if (!event) return res.status(404).json({ error: 'Event not found' });
+    const [[event]] = await conn.query(`SELECT * FROM events WHERE id = ?`, [
+      id,
+    ]);
+    if (!event) return res.status(404).json({ error: "Event not found" });
 
     const [images] = await conn.query(
       `SELECT id, image_name, CHAR_LENGTH(image_blob) AS size, sort_order, created_at
@@ -168,7 +199,7 @@ exports.getEvent = async (req, res) => {
 
     return res.json({ event, images });
   } catch (err) {
-    console.error('getEvent error:', err);
+    console.error("getEvent error:", err);
     return res.status(500).json({ error: err.message });
   } finally {
     conn.release();
@@ -181,19 +212,25 @@ exports.getEvent = async (req, res) => {
 //
 exports.getImageBlob = async (req, res) => {
   const id = Number(req.params.imageId);
-  if (!id) return res.status(400).json({ error: 'Invalid image id' });
+  if (!id) return res.status(400).json({ error: "Invalid image id" });
 
   const conn = await pool.getConnection();
   try {
-    const [[img]] = await conn.query(`SELECT id, image_name, image_blob FROM event_images WHERE id = ?`, [id]);
-    if (!img) return res.status(404).json({ error: 'Image not found' });
+    const [[img]] = await conn.query(
+      `SELECT id, image_name, image_blob FROM event_images WHERE id = ?`,
+      [id]
+    );
+    if (!img) return res.status(404).json({ error: "Image not found" });
 
     // no mime stored; send as generic inline stream with original filename
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${img.image_name}"`);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${img.image_name}"`
+    );
     return res.send(img.image_blob);
   } catch (err) {
-    console.error('getImageBlob error:', err);
+    console.error("getImageBlob error:", err);
     return res.status(500).json({ error: err.message });
   } finally {
     conn.release();
@@ -208,10 +245,18 @@ exports.getImageBlob = async (req, res) => {
 //
 exports.updateEvent = async (req, res) => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  if (!id) return res.status(400).json({ error: "Invalid id" });
 
   const {
-    title, event_date, hosted_by, link, address, description, status, coverIndex, deleteImageIds
+    title,
+    event_date,
+    hosted_by,
+    link,
+    address,
+    description,
+    status,
+    coverIndex,
+    deleteImageIds,
   } = req.body;
 
   // normalize files
@@ -221,7 +266,7 @@ exports.updateEvent = async (req, res) => {
   } else if (Array.isArray(req.files)) {
     files = req.files;
   } else {
-    files = req.files['images'] || req.files['images[]'] || [];
+    files = req.files["images"] || req.files["images[]"] || [];
   }
 
   const conn = await pool.getConnection();
@@ -232,42 +277,81 @@ exports.updateEvent = async (req, res) => {
     const [[ev]] = await conn.query(`SELECT id FROM events WHERE id = ?`, [id]);
     if (!ev) {
       await conn.rollback();
-      return res.status(404).json({ error: 'Event not found' });
+      return res.status(404).json({ error: "Event not found" });
     }
 
     const updateFields = [];
     const params = [];
 
-    if (title !== undefined) { updateFields.push('title = ?'); params.push(title); }
-    if (event_date !== undefined) { updateFields.push('event_date = ?'); params.push(event_date || null); }
-    if (hosted_by !== undefined) { updateFields.push('hosted_by = ?'); params.push(hosted_by); }
-    if (link !== undefined) { updateFields.push('link = ?'); params.push(link); }
-    if (address !== undefined) { updateFields.push('address = ?'); params.push(address); }
-    if (description !== undefined) { updateFields.push('description = ?'); params.push(description); }
-    if (status !== undefined) { updateFields.push('status = ?'); params.push(parseBool(status) ? 1 : 0); }
+    if (title !== undefined) {
+      updateFields.push("title = ?");
+      params.push(title);
+    }
+    if (event_date !== undefined) {
+      updateFields.push("event_date = ?");
+      params.push(event_date || null);
+    }
+    if (hosted_by !== undefined) {
+      updateFields.push("hosted_by = ?");
+      params.push(hosted_by);
+    }
+    if (link !== undefined) {
+      updateFields.push("link = ?");
+      params.push(link);
+    }
+    if (address !== undefined) {
+      updateFields.push("address = ?");
+      params.push(address);
+    }
+    if (description !== undefined) {
+      updateFields.push("description = ?");
+      params.push(description);
+    }
+    if (status !== undefined) {
+      updateFields.push("status = ?");
+      params.push(parseBool(status) ? 1 : 0);
+    }
 
     if (updateFields.length) {
       params.push(id);
-      await conn.query(`UPDATE events SET ${updateFields.join(', ')} WHERE id = ?`, params);
+      await conn.query(
+        `UPDATE events SET ${updateFields.join(", ")} WHERE id = ?`,
+        params
+      );
     }
 
     // delete images if client asked (deleteImageIds is comma-separated)
     if (deleteImageIds) {
-      const ids = String(deleteImageIds).split(',').map(x => Number(x)).filter(Boolean);
+      const ids = String(deleteImageIds)
+        .split(",")
+        .map((x) => Number(x))
+        .filter(Boolean);
       if (ids.length) {
         // if any of those were cover_image_id, clear it
-        await conn.query(`UPDATE events SET cover_image_id = NULL WHERE cover_image_id IN (?)`, [ids]);
-        await conn.query(`DELETE FROM event_images WHERE id IN (?) AND event_id = ?`, [ids, id]);
+        await conn.query(
+          `UPDATE events SET cover_image_id = NULL WHERE cover_image_id IN (?)`,
+          [ids]
+        );
+        await conn.query(
+          `DELETE FROM event_images WHERE id IN (?) AND event_id = ?`,
+          [ids, id]
+        );
       }
     }
 
     // append new images
     if (files.length) {
-      const [[{ maxorder }]] = await conn.query(`SELECT COALESCE(MAX(sort_order), -1) AS maxorder FROM event_images WHERE event_id = ?`, [id]);
-      let order = (maxorder === null ? -1 : maxorder);
+      const [[{ maxorder }]] = await conn.query(
+        `SELECT COALESCE(MAX(sort_order), -1) AS maxorder FROM event_images WHERE event_id = ?`,
+        [id]
+      );
+      let order = maxorder === null ? -1 : maxorder;
       for (const f of files) {
         order++;
-        await conn.query(`INSERT INTO event_images (event_id, image_name, image_blob, sort_order) VALUES (?, ?, ?, ?)`, [id, f.originalname, f.buffer, order]);
+        await conn.query(
+          `INSERT INTO event_images (event_id, image_name, image_blob, sort_order) VALUES (?, ?, ?, ?)`,
+          [id, f.originalname, f.buffer, order]
+        );
       }
     }
 
@@ -279,7 +363,10 @@ exports.updateEvent = async (req, res) => {
         [id, Math.max(0, ci)]
       );
       if (imgs.length) {
-        await conn.query(`UPDATE events SET cover_image_id = ? WHERE id = ?`, [imgs[0].id, id]);
+        await conn.query(`UPDATE events SET cover_image_id = ? WHERE id = ?`, [
+          imgs[0].id,
+          id,
+        ]);
       }
     }
 
@@ -287,7 +374,7 @@ exports.updateEvent = async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     await conn.rollback();
-    console.error('updateEvent error:', err);
+    console.error("updateEvent error:", err);
     return res.status(500).json({ error: err.message });
   } finally {
     conn.release();
@@ -300,14 +387,15 @@ exports.updateEvent = async (req, res) => {
 //
 exports.deleteEvent = async (req, res) => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  if (!id) return res.status(400).json({ error: "Invalid id" });
 
   try {
     const [r] = await pool.query(`DELETE FROM events WHERE id = ?`, [id]);
-    if (r.affectedRows === 0) return res.status(404).json({ error: 'Not found' });
+    if (r.affectedRows === 0)
+      return res.status(404).json({ error: "Not found" });
     return res.json({ ok: true });
   } catch (err) {
-    console.error('deleteEvent error:', err);
+    console.error("deleteEvent error:", err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -318,25 +406,81 @@ exports.deleteEvent = async (req, res) => {
 //
 exports.deleteImage = async (req, res) => {
   const id = Number(req.params.imageId);
-  if (!id) return res.status(400).json({ error: 'Invalid image id' });
+  if (!id) return res.status(400).json({ error: "Invalid image id" });
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
     // clear cover_image_id referencing this image
-    await conn.query(`UPDATE events SET cover_image_id = NULL WHERE cover_image_id = ?`, [id]);
+    await conn.query(
+      `UPDATE events SET cover_image_id = NULL WHERE cover_image_id = ?`,
+      [id]
+    );
 
     const [r] = await conn.query(`DELETE FROM event_images WHERE id = ?`, [id]);
     await conn.commit();
 
-    if (r.affectedRows === 0) return res.status(404).json({ error: 'Image not found' });
+    if (r.affectedRows === 0)
+      return res.status(404).json({ error: "Image not found" });
     return res.json({ ok: true });
   } catch (err) {
     await conn.rollback();
-    console.error('deleteImage error:', err);
+    console.error("deleteImage error:", err);
     return res.status(500).json({ error: err.message });
   } finally {
     conn.release();
+  }
+};
+
+// Previous Events
+
+exports.listPreviousEvents = async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(
+      `SELECT
+         e.id, e.title, e.event_date, e.hosted_by, e.link, e.address,
+         e.description, e.status, e.cover_image_id, e.created_at, e.updated_at,
+         (SELECT COUNT(*) FROM event_images WHERE event_id = e.id) AS images_count
+       FROM events e
+       WHERE e.status = 0
+       ORDER BY e.event_date DESC, e.created_at DESC`
+    );
+
+    return res.json({ data: rows });
+  } catch (err) {
+    console.error('listPreviousEvents error:', err);
+    return res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
+};
+
+
+
+// Archieve Events
+//
+// ARCHIVE event: set status = 0
+// PUT /api/events/:id/archive
+//
+exports.archiveEvent = async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const [r] = await pool.query(
+      `UPDATE events SET status = 0 WHERE id = ? AND status = 1`,
+      [id]
+    );
+
+    if (r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Event not found or already archived' });
+    }
+
+    return res.json({ ok: true, message: 'Event archived successfully' });
+  } catch (err) {
+    console.error('archiveEvent error:', err);
+    return res.status(500).json({ error: err.message });
   }
 };
