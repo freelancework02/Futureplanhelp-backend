@@ -484,3 +484,32 @@ exports.archiveEvent = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
+
+
+
+//
+// LIST: All events (active + archived)
+// GET /api/events/all
+//
+exports.listAllEvents = async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(
+      `SELECT
+         e.id, e.title, e.event_date, e.hosted_by, e.link, e.address,
+         e.description, e.status, e.cover_image_id, 
+         e.created_at, e.updated_at,
+         (SELECT COUNT(*) FROM event_images WHERE event_id = e.id) AS images_count
+       FROM events e
+       ORDER BY e.status DESC, e.event_date DESC, e.created_at DESC`
+    );
+
+    return res.json({ data: rows });
+  } catch (err) {
+    console.error("listAllEvents error:", err);
+    return res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
+};
